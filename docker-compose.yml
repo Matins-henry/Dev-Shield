@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: devshield-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  mock-upstream:
+    image: mendhak/http-https-echo:34
+    container_name: devshield-mock-upstream
+    ports:
+      - "8081:8080"
+    environment:
+      - HTTP_PORT=8080
+    restart: unless-stopped
+
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    container_name: devshield-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - HOST=0.0.0.0
+      - REDIS_URL=redis://redis:6379
+      - DEFAULT_UPSTREAM_URL=http://mock-upstream:8080
+    depends_on:
+      redis:
+        condition: service_healthy
+      mock-upstream:
+        condition: service_started
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: devshield-dashboard
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_GATEWAY_URL=http://localhost:8080
+    depends_on:
+      - gateway
+    restart: unless-stopped
+
+volumes:
+  redis_data:
